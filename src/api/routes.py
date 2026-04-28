@@ -239,6 +239,31 @@ def decode_spotnet_metadata(spotnet_category, spotnet_subcats: str) -> dict:
     return metadata
 
 
+def get_genre_from_subcats(spotnet_category: int | None, spotnet_subcats: str | None) -> str:
+    """Extract genre (d-code) from spotnet subcategories.
+
+    Args:
+        spotnet_category: Raw category from XML (0-3) or None
+        spotnet_subcats: Pipe-separated codes like "a0|b3|c1|d4" or None
+
+    Returns:
+        Human-readable genre name or empty string if not found
+    """
+    if spotnet_category is None or spotnet_subcats is None:
+        return ""
+
+    try:
+        hcat = int(spotnet_category)
+    except (ValueError, TypeError):
+        return ""
+
+    for code in spotnet_subcats.split("|"):
+        if code.startswith("d"):
+            return cat2desc(hcat, code)
+
+    return ""
+
+
 def get_row_background_color(spotnet_category: int | None, spotnet_subcats: str | None) -> str:
     """Get background color for a row based on spotnet category and type.
 
@@ -608,6 +633,7 @@ async def search_ui(
         "cat_names": CAT_NAMES,
         "cat_options": CAT_OPTIONS,
         "newznab_id_map": NEWZNAB_ID_MAP,
+        "extract_genre": extract_genre_func,
     }
     html_content = template.render(context)
     return HTMLResponse(html_content)
