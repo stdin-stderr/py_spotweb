@@ -36,5 +36,14 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  matcher:
+    build: .
+    command: python -m src.matcher.main
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:

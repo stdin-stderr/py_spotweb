@@ -93,6 +93,51 @@
     </div>
   </div>
 
+  {% if tmdb %}
+    <div class="tmdb-section">
+      <h2>
+        TMDB Match
+        <a href="https://www.themoviedb.org/{{ tmdb.tmdb_type }}/{{ tmdb.tmdb_id }}"
+           target="_blank" rel="noopener noreferrer" style="font-size:0.75em; font-weight:normal; margin-left:0.5em;">
+          View on TMDB ↗
+        </a>
+      </h2>
+      <div style="display:flex; gap:1.5em; align-items:flex-start;">
+        {% if tmdb.poster_path %}
+          <img src="https://image.tmdb.org/t/p/w185{{ tmdb.poster_path }}"
+               alt="{{ tmdb.title }}" style="border-radius:4px; flex-shrink:0;" />
+        {% endif %}
+        <div>
+          <div style="font-size:1.2em; font-weight:600; margin-bottom:0.3em;">
+            {{ tmdb.title }}
+            {% if tmdb.release_year %}({{ tmdb.release_year }}){% endif %}
+          </div>
+          {% if tmdb.original_title and tmdb.original_title != tmdb.title %}
+            <div style="color:#666; margin-bottom:0.5em; font-style:italic;">{{ tmdb.original_title }}</div>
+          {% endif %}
+          <div style="display:flex; gap:1em; flex-wrap:wrap; margin-bottom:0.75em;">
+            <span style="background:#0d253f; color:#fff; border-radius:4px; padding:0.2em 0.6em; font-size:0.85em;">
+              {{ "Movie" if tmdb.tmdb_type == "movie" else "TV Series" }}
+            </span>
+            {% if tmdb.rating %}
+              <span style="background:#f5c518; color:#000; border-radius:4px; padding:0.2em 0.6em; font-size:0.85em;">
+                ★ {{ "%.1f"|format(tmdb.rating) }}
+              </span>
+            {% endif %}
+            {% if tmdb_season %}
+              <span style="background:#eee; border-radius:4px; padding:0.2em 0.6em; font-size:0.85em;">
+                S{{ "%02d"|format(tmdb_season) }}{% if tmdb_episode %}E{{ "%02d"|format(tmdb_episode) }}{% endif %}
+              </span>
+            {% endif %}
+          </div>
+          {% if tmdb.overview %}
+            <p style="margin:0; color:#333; line-height:1.5;">{{ tmdb.overview }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
   {% if description %}
     <div>
       <h2>Description</h2>

@@ -44,12 +44,21 @@ class StorageConfig:
 
 
 @dataclass
+class TmdbConfig:
+    api_key: str
+    sleep_between_requests: float
+    sleep_when_caught_up: int
+    batch_size: int
+
+
+@dataclass
 class Config:
     nntp: NNTPConfig
     database: DatabaseConfig
     scanner: ScannerConfig
     api: APIConfig
     storage: StorageConfig
+    tmdb: TmdbConfig
 
 
 def load(path: str | Path = "config.toml") -> Config:
@@ -89,4 +98,12 @@ def load(path: str | Path = "config.toml") -> Config:
         retrieve_on_demand=os.environ.get("RETRIEVE_ON_DEMAND", str(st_raw.get("retrieve_on_demand", "true"))).lower() in ("true", "1", "yes")
     )
 
-    return Config(nntp=nntp, database=database, scanner=scanner, api=api, storage=storage)
+    t = raw.get("tmdb", {})
+    tmdb = TmdbConfig(
+        api_key=os.environ.get("TMDB_API_KEY", t.get("api_key", "")),
+        sleep_between_requests=float(t.get("sleep_between_requests", 1.0)),
+        sleep_when_caught_up=int(t.get("sleep_when_caught_up", 60)),
+        batch_size=int(t.get("batch_size", 20)),
+    )
+
+    return Config(nntp=nntp, database=database, scanner=scanner, api=api, storage=storage, tmdb=tmdb)

@@ -419,6 +419,14 @@ async def release_detail(identifier: str, request: Request):
     if not row:
         raise HTTPException(404, f"Release {identifier} not found")
 
+    # Fetch TMDB metadata if matched
+    tmdb = None
+    if row.get("tmdb_id"):
+        with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+            tmdb = cur.execute(
+                "SELECT * FROM tmdb_metadata WHERE tmdb_id = %s", (row["tmdb_id"],)
+            ).fetchone()
+
     # Use messageid as the canonical identifier, fall back to id
     canonical_id = row.get("messageid") or str(row["id"])
 
@@ -469,6 +477,10 @@ async def release_detail(identifier: str, request: Request):
         "spotnet_website": row.get("spotnet_website"),
         "spotnet_verified": row.get("spotnet_verified"),
         "spotnet_spotter_id": row.get("spotnet_spotter_id"),
+        "tmdb": tmdb,
+        "tmdb_season": row.get("tmdb_season"),
+        "tmdb_episode": row.get("tmdb_episode"),
+        "tmdb_year": row.get("tmdb_year"),
     }
     html_content = template.render(context)
     return HTMLResponse(html_content)

@@ -20,3 +20,9 @@ host     = "0.0.0.0"
 port     = 8080
 api_key  = ""
 base_url = "http://localhost:8080"
+
+[tmdb]
+# TMDB_API_KEY env var must be set — no default here
+sleep_between_requests = 1.0
+sleep_when_caught_up   = 60
+batch_size             = 20

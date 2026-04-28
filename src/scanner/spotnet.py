@@ -216,10 +216,17 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
 
     # Trailing pipe on every stored string so LIKE '%code|%' matches any position.
     subcat_string = "|".join(subcat_codes) + "|" if subcat_codes else ""
-    is_tv = "z1" in subcat_codes  # z1 = Series type
-
     if spotnet_category == 0:
-        category_id = _CAT_VIDEO_TV if is_tv else _CAT_VIDEO_MOVIE
+        if "z3" in subcat_codes:    # Erotica
+            category_id = _CAT_XXX
+        elif "z1" in subcat_codes:  # Series
+            category_id = _CAT_VIDEO_TV
+        elif "z2" in subcat_codes:  # Book/ebook in video category
+            category_id = _CAT_IMAGE
+        elif "z4" in subcat_codes:  # Picture
+            category_id = _CAT_OTHER
+        else:                       # z0 = Movie (default)
+            category_id = _CAT_VIDEO_MOVIE
     elif spotnet_category == 1:
         category_id = _CAT_AUDIO
     elif spotnet_category == 2:
