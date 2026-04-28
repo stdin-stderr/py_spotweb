@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS releases (
     nzb_raw        BYTEA,                           -- pre-assembled NZB from Spotnet XML
     image_raw      BYTEA,                           -- thumbnail image bytes (JPEG/PNG) from alt.binaries.ftd
     description    TEXT,                            -- release description from Spotnet XML
+    spotnet_category INTEGER,
+    spotnet_subcats  TEXT,
+    nzb_segments     TEXT,
+    image_segments   TEXT,
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS releases_category ON releases(category_id);
@@ -75,8 +79,3 @@ INSERT INTO categories (id, parent_id, name, newznab_id) VALUES
   (31, 3,    'Lossless',    3040)
 ON CONFLICT (id) DO NOTHING;
 
--- Migrations — idempotent, run on every startup via init_db()
-ALTER TABLE releases ADD COLUMN IF NOT EXISTS image_raw         BYTEA;
-ALTER TABLE releases ADD COLUMN IF NOT EXISTS description       TEXT;
-ALTER TABLE releases ADD COLUMN IF NOT EXISTS spotnet_category  INTEGER;
-ALTER TABLE releases ADD COLUMN IF NOT EXISTS spotnet_subcats   TEXT;

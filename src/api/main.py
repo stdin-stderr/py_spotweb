@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
     conn = psycopg.connect(cfg.database.dsn)
     app.state.db_conn = conn
     app.state.base_url = cfg.api.base_url
+    app.state.config = cfg
 
     # Initialize Jinja2 templates with caching disabled to avoid dict hashing issues
     templates_dir = Path(__file__).parent / "templates"

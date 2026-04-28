@@ -124,13 +124,14 @@ PostgreSQL schema storing releases, segments, and metadata.
   - `title` — Spot title
   - `description` — Parsed description text
   - `category_id` — Newznab category (e.g., 2040 for Movies HD)
+  - `image_raw` — JPEG/PNG thumbnail bytes (BYTEA, NULL if on-demand)
+  - `nzb_raw` — Assembled NZB bytes (BYTEA, NULL if on-demand)
+  - `nzb_segments` — Pipe-separated Message-IDs for on-demand NZB assembly
+  - `image_segments` — Pipe-separated Message-IDs for on-demand image assembly
   - `spotnet_category` — Raw category from XML (0=Video, 1=Audio, 2=Image, 3=Apps)
   - `spotnet_subcats` — Pipe-separated subcategory codes (e.g., "a0|b3|c1|d4")
-  - `image_raw` — JPEG/PNG thumbnail bytes (BYTEA)
-  - `nzb_raw` — Assembled NZB bytes (BYTEA)
   - `size` — Total file size
-  - `article_num` — Source article number in free.pt
-  - `posted` — Timestamp
+  - `posted_at` — Timestamp of the post
 
 - `segments` — Individual NZB and image segments
   - `release_id` — Foreign key to releases
@@ -151,10 +152,32 @@ DATABASE_URL=postgresql://indexer:secret@db:5432/usenet_index
 NNTP_HOST=your-nntp-provider.com
 NNTP_PORT=563
 NNTP_SSL=True
+NNTP_USERNAME=your_username
+NNTP_PASSWORD=your_password
 
 # Scanner max age for initial bisect
 MAX_AGE_DAYS=3
+
+# Storage strategy (True = fetch from Usenet on demand, False = store in DB)
+RETRIEVE_ON_DEMAND=True
 ```
+
+## Storage Strategy
+
+The `RETRIEVE_ON_DEMAND` setting significantly changes how the application manages data:
+
+### `RETRIEVE_ON_DEMAND=True` (Default / Offloaded)
+*   **Scanner**: Only parses metadata. It stores the Message-IDs (segments) but skips downloading the actual files. This makes the scanner much faster and keeps the database extremely small.
+*   **Database**: Stores only text metadata and segment IDs.
+*   **API**: When a user requests an NZB or image, the API connects to Usenet, fetches the segments, and assembles the file on the fly.
+*   **Impact**:
+    *   **Pros**: 90%+ reduction in database storage; significantly faster indexing.
+    *   **Cons**: Higher latency on the first request for a file; the API now requires NNTP access and credentials.
+
+### `RETRIEVE_ON_DEMAND=False` (Standard)
+*   **Scanner**: Downloads and assembles every NZB and image during the indexing phase.
+*   **Database**: Stores full binary blobs (`BYTEA`) for every release. This can lead to very large database sizes (GBs of data).
+*   **API**: Serves files instantly from the local database.
 
 ### NNTP Server
 

@@ -39,11 +39,17 @@ class APIConfig:
 
 
 @dataclass
+class StorageConfig:
+    retrieve_on_demand: bool
+
+
+@dataclass
 class Config:
     nntp: NNTPConfig
     database: DatabaseConfig
     scanner: ScannerConfig
     api: APIConfig
+    storage: StorageConfig
 
 
 def load(path: str | Path = "config.toml") -> Config:
@@ -78,4 +84,9 @@ def load(path: str | Path = "config.toml") -> Config:
         base_url=a["base_url"],
     )
 
-    return Config(nntp=nntp, database=database, scanner=scanner, api=api)
+    st_raw = raw.get("storage", {})
+    storage = StorageConfig(
+        retrieve_on_demand=os.environ.get("RETRIEVE_ON_DEMAND", str(st_raw.get("retrieve_on_demand", "true"))).lower() in ("true", "1", "yes")
+    )
+
+    return Config(nntp=nntp, database=database, scanner=scanner, api=api, storage=storage)

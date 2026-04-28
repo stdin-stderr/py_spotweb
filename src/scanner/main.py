@@ -90,6 +90,7 @@ def scan_spotnet_group(
     group_name: str,
     max_age_days: int,
     batch_size: int,
+    retrieve_on_demand: bool = False,
 ) -> bool:
     """Scan a Spotnet group: download article bodies, parse XML, store releases directly.
 
@@ -163,7 +164,10 @@ def scan_spotnet_group(
             # Assemble NZB and image from segments listed in the XML
             nzb_bytes: bytes | None = None
             image_bytes: bytes | None = None
-            if nntp._conn:
+            nzb_segments_str: str | None = "|".join(post.nzb_segments) + "|" if post.nzb_segments else None
+            image_segments_str: str | None = "|".join(post.image_segments) + "|" if post.image_segments else None
+
+            if nntp._conn and not retrieve_on_demand:
                 if post.nzb_segments:
                     try:
                         nzb_bytes = assemble_nzb(nntp._conn, post.nzb_segments)
@@ -182,11 +186,12 @@ def scan_spotnet_group(
                 INSERT INTO releases
                   (title, search_title, category_id, poster, posted_at,
                    total_bytes, file_count, completion_pct, search_vector,
-                   source, nzb_raw, image_raw, description, spotnet_category, spotnet_subcats)
+                   source, nzb_raw, image_raw, description, spotnet_category, spotnet_subcats,
+                   nzb_segments, image_segments)
                 VALUES (
                   %s, %s, %s, %s, %s,
                   %s, 1, 100, to_tsvector('english', %s),
-                  'spotnet', %s, %s, %s, %s, %s
+                  'spotnet', %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT DO NOTHING
                 """,
@@ -203,6 +208,8 @@ def scan_spotnet_group(
                     post.description or None,
                     post.spotnet_category,
                     post.spotnet_subcats or None,
+                    nzb_segments_str,
+                    image_segments_str,
                 ),
             )
             log.info("Spotnet %s: stored %r (%.1f MB, cat=%d)", group_name, post.title, post.file_size / 1024 / 1024, post.category_id)
@@ -245,6 +252,7 @@ def run_once(cfg) -> bool:
                     group_name=group_name,
                     max_age_days=cfg.scanner.max_age_days,
                     batch_size=cfg.nntp.batch_size,
+                    retrieve_on_demand=cfg.storage.retrieve_on_demand,
                 )
                 if not caught_up:
                     all_caught_up = False

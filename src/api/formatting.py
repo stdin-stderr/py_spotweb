@@ -60,8 +60,8 @@ def format_description(text: str) -> str:
     def replace_color(match):
         color_code = match.group(1)
         content = match.group(2)
-        # Validate hex color (simple check: # followed by 3 or 6 hex chars)
-        if re.match(r'^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$', color_code):
+        # Validate hex color or simple color names
+        if re.match(r'^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$', color_code) or re.match(r'^[a-zA-Z]+$', color_code):
             return f'<span style="color:{color_code}">{content}</span>'
         return match.group(0)  # Return unmodified if invalid
 
@@ -103,17 +103,21 @@ def format_description(text: str) -> str:
     # [quote]...[/quote]
     escaped = re.sub(r'\[quote\](.*?)\[/quote\]', r'<blockquote>\1</blockquote>', escaped, flags=re.IGNORECASE | re.DOTALL)
 
-    # Simple formatting tags (no attributes)
+    # Simple formatting tags (handle start/end tags independently for better robustness with malformed/nested BBCode)
     # [b]...[/b]
-    escaped = re.sub(r'\[b\](.*?)\[/b\]', r'<b>\1</b>', escaped, flags=re.IGNORECASE | re.DOTALL)
+    escaped = re.sub(r'\[b\]', '<b>', escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r'\[/b\]', '</b>', escaped, flags=re.IGNORECASE)
 
     # [i]...[/i]
-    escaped = re.sub(r'\[i\](.*?)\[/i\]', r'<em>\1</em>', escaped, flags=re.IGNORECASE | re.DOTALL)
+    escaped = re.sub(r'\[i\]', '<em>', escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r'\[/i\]', '</em>', escaped, flags=re.IGNORECASE)
 
     # [u]...[/u]
-    escaped = re.sub(r'\[u\](.*?)\[/u\]', r'<u>\1</u>', escaped, flags=re.IGNORECASE | re.DOTALL)
+    escaped = re.sub(r'\[u\]', '<u>', escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r'\[/u\]', '</u>', escaped, flags=re.IGNORECASE)
 
     # [s]...[/s]
-    escaped = re.sub(r'\[s\](.*?)\[/s\]', r'<s>\1</s>', escaped, flags=re.IGNORECASE | re.DOTALL)
+    escaped = re.sub(r'\[s\]', '<s>', escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r'\[/s\]', '</s>', escaped, flags=re.IGNORECASE)
 
     return escaped

@@ -15,6 +15,8 @@ from fastapi.templating import Jinja2Templates
 from src.api.formatting import format_description
 from src.api.newznab import caps_response, search_response
 from src.api.nzb import get_nzb
+from src.api.nntp import get_nntp_client
+from src.scanner.spotnet import assemble_image
 from src.scanner.categories import cat2desc, cat2short_desc, subcat_description, head_cat2desc, HEAD_CATEGORIES, CATEGORIES, SUBCAT_DESCRIPTIONS
 
 log = logging.getLogger(__name__)
@@ -338,7 +340,12 @@ async def api_endpoint(
             release_id = int(id)
         except ValueError:
             raise HTTPException(400, "id must be an integer")
-        nzb = get_nzb(release_id, conn)
+
+        nntp_client = None
+        if request.app.state.config.storage.retrieve_on_demand:
+            nntp_client = get_nntp_client(request.app.state.config.nntp)
+
+        nzb = get_nzb(release_id, conn, nntp_client)
         if nzb is None:
             raise HTTPException(404, "NZB not available for this release")
         title_row = conn.execute("SELECT title FROM releases WHERE id = %s", (release_id,)).fetchone()
@@ -361,11 +368,26 @@ async def api_endpoint(
 async def image_endpoint(release_id: int, request: Request) -> Response:
     conn: psycopg.Connection = request.app.state.db_conn
     row = conn.execute(
-        "SELECT image_raw FROM releases WHERE id = %s", (release_id,)
+        "SELECT image_raw, image_segments FROM releases WHERE id = %s", (release_id,)
     ).fetchone()
-    if not row or not row[0]:
+    if not row:
+        raise HTTPException(404, "Release not found")
+
+    image_raw, image_segments_str = row
+    data = bytes(image_raw) if image_raw else None
+
+    if not data and image_segments_str and request.app.state.config.storage.retrieve_on_demand:
+        segments = [s for s in image_segments_str.split("|") if s]
+        nntp_client = get_nntp_client(request.app.state.config.nntp)
+        try:
+            nntp_client.connect()
+            data = assemble_image(nntp_client._conn, segments)
+        except Exception as exc:
+            log.warning("On-demand image retrieval failed for %d: %s", release_id, exc)
+
+    if not data:
         raise HTTPException(404, "No image available for this release")
-    data = bytes(row[0])
+
     media_type = "image/jpeg" if data[:2] == b"\xff\xd8" else "image/png"
     return Response(content=data, media_type=media_type)
 
@@ -380,7 +402,7 @@ async def release_detail(release_id: int, request: Request):
             """
             SELECT id, title, poster, posted_at, total_bytes, file_count,
                    completion_pct, description, has_nfo, has_par2, is_passworded,
-                   image_raw, spotnet_category, spotnet_subcats, category_id
+                   image_raw, image_segments, spotnet_category, spotnet_subcats, category_id
             FROM releases
             WHERE id = %s
             """,
@@ -406,6 +428,9 @@ async def release_detail(release_id: int, request: Request):
     description_raw = row.get("description") or ""
     description_formatted = format_description(description_raw) if description_raw else ""
 
+    # Check if we have an image (stored or via segments)
+    has_image = bool(row.get("image_raw") or row.get("image_segments"))
+
     # Render template directly
     template = templates.get_template("release_detail.html")
     context = {
@@ -418,6 +443,7 @@ async def release_detail(release_id: int, request: Request):
         "file_count": row.get("file_count"),
         "completion": row.get("completion_pct"),
         "image_raw": row.get("image_raw"),
+        "has_image": has_image,
         "description": description_formatted,
         "metadata": metadata,
         "nfo_raw": row.get("has_nfo"),
@@ -511,7 +537,7 @@ def _do_search(
             f"""
             SELECT id, title, category_id, poster, posted_at, total_bytes, file_count,
                    completion_pct, description,
-                   (image_raw IS NOT NULL) AS has_image,
+                   (image_raw IS NOT NULL OR image_segments IS NOT NULL) AS has_image,
                    spotnet_category, spotnet_subcats
             FROM releases
             WHERE {where}
