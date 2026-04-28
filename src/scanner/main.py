@@ -199,11 +199,13 @@ def scan_spotnet_group(
                   (messageid, title, search_title, category_id, poster, posted_at,
                    total_bytes, file_count, completion_pct, search_vector,
                    source, nzb_raw, image_raw, description, spotnet_category, spotnet_subcats,
-                   nzb_segments, image_segments, spotnet_key, spotnet_tag, spotnet_created, spotnet_website)
+                   nzb_segments, image_segments, spotnet_key, spotnet_tag, spotnet_created, spotnet_website,
+                   spotnet_signature, spotnet_verified, spotnet_spotter_id)
                 VALUES (
                   %s, %s, %s, %s, %s, %s,
                   %s, 1, 100, to_tsvector('english', %s),
-                  'spotnet', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                  'spotnet', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s
                 )
                 ON CONFLICT DO NOTHING
                 """,
@@ -227,6 +229,9 @@ def scan_spotnet_group(
                     post.spotnet_tag or None,
                     post.spotnet_created,
                     post.spotnet_website or None,
+                    post.spotnet_signature or None,
+                    post.spotnet_verified,
+                    post.spotnet_spotter_id or None,
                 ),
             )
             log.info("Spotnet %s: stored %r (%.1f MB, cat=%d)", group_name, post.title, post.file_size / 1024 / 1024, post.category_id)

@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 import zlib
 from dataclasses import dataclass, field
 
+from src.scanner.signing import verify_spot_signature
+
 log = logging.getLogger(__name__)
 
 # Matches the raw SubCat XML format {digits}{letter}{digits}, e.g. "9a0" or "11b4"
@@ -47,6 +49,11 @@ class SpotnetPost:
     spotnet_tag: str = ""  # User-defined tag from <Tag>
     spotnet_created: int | None = None  # Unix timestamp from <Created>
     spotnet_website: str = ""  # Optional URL from <Website>
+    spotnet_signature: str = ""  # Base64-encoded signature from <Signature>
+    spotnet_keyid: int | None = None  # Key ID from <Key> for verification
+    spotnet_selfsigned_pubkey: str = ""  # User's public key for SPOTSIGN_V2
+    spotnet_verified: bool = False  # Signature verification result
+    spotnet_spotter_id: str | None = None  # Unique poster ID for SPOTSIGN_V2
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +70,32 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
     decoded: list[str] = []
     for raw in lines:
         decoded.append(raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw)
+
+    # Extract Message-ID and signature from NNTP headers
+    message_id = None
+    header_signature = None
+
+    # Debug: log first few headers for one article to see what NNTP returns
+    debug_headers = []
+
+    for i, line in enumerate(decoded):
+        stripped = line.rstrip("\r\n")
+
+        # Collect first 20 headers for debugging (stop at empty line)
+        if i < 20 and stripped:
+            debug_headers.append(stripped[:60])
+        elif i > 0 and not stripped:
+            break
+
+        if stripped.lower().startswith("message-id:"):
+            message_id = stripped[11:].strip()
+        if stripped.lower().startswith("x-xml-sign:"):
+            header_signature = stripped[11:].strip()
+            log.info("Found X-XML-Sign for %s", message_id)
+
+    # Log headers from first article for debugging
+    if debug_headers and not header_signature:
+        log.info("Article headers (no signature found): %s", debug_headers[:8])
 
     # Collect X-XML header fragments (each line starts with "X-XML: ")
     xml_parts: list[str] = []
@@ -116,15 +149,23 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
 
     # Extract Spotnet-specific metadata
     spotnet_key = None
+    spotnet_keyid = None
     try:
         key_raw = txt("Key")
         if key_raw:
             spotnet_key = int(key_raw)
+            spotnet_keyid = spotnet_key
     except (ValueError, AttributeError):
         pass
 
     spotnet_tag = txt("Tag")
     spotnet_website = txt("Website")
+    spotnet_signature_xml = txt("Signature")
+    spotnet_selfsigned_pubkey = txt("UserKey")
+
+    # Debug: log if we found signature in XML
+    if spotnet_signature_xml:
+        log.info("Found <Signature> in XML for %s", title[:50])
 
     spotnet_created = None
     try:
@@ -218,6 +259,21 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
             if seg.text and seg.text.strip():
                 image_segments.append(seg.text.strip())
 
+    # Verify signature if present (from <Signature> element in XML)
+    spotnet_verified = False
+    spotnet_spotter_id = None
+    signature_to_verify = spotnet_signature_xml or header_signature
+    if signature_to_verify and spotnet_keyid is not None and message_id:
+        spot_dict = {
+            'keyid': spotnet_keyid,
+            'headersign': signature_to_verify,
+            'selfsignedpubkey': spotnet_selfsigned_pubkey if spotnet_selfsigned_pubkey else None,
+        }
+        try:
+            spotnet_verified, spotnet_spotter_id = verify_spot_signature(spot_dict, message_id)
+        except Exception as exc:
+            log.debug("Signature verification failed: %s", exc)
+
     return SpotnetPost(
         title=title,
         poster=poster,
@@ -233,6 +289,11 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
         spotnet_tag=spotnet_tag,
         spotnet_created=spotnet_created,
         spotnet_website=spotnet_website,
+        spotnet_signature=signature_to_verify or "",
+        spotnet_keyid=spotnet_keyid,
+        spotnet_selfsigned_pubkey=spotnet_selfsigned_pubkey,
+        spotnet_verified=spotnet_verified,
+        spotnet_spotter_id=spotnet_spotter_id,
     )
 
 

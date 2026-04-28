@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 import psycopg.rows
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from src.api.formatting import format_description
@@ -467,6 +467,8 @@ async def release_detail(identifier: str, request: Request):
         "spotnet_tag": row.get("spotnet_tag"),
         "spotnet_created": spotnet_created_dt,
         "spotnet_website": row.get("spotnet_website"),
+        "spotnet_verified": row.get("spotnet_verified"),
+        "spotnet_spotter_id": row.get("spotnet_spotter_id"),
     }
     html_content = template.render(context)
     return HTMLResponse(html_content)
@@ -613,6 +615,9 @@ def _remove_filter(q: str, cat: str, active_subcats: list[str], letter: str, num
 
     return "&".join(qs_parts)
 
+@router.get("/")
+async def to_ui():
+    return RedirectResponse(url="/ui/")
 
 @router.get("/ui")
 @router.get("/ui/")

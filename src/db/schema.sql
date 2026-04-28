@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS releases (
     spotnet_tag      TEXT,                           -- User-defined tag from <Tag>
     spotnet_created  INTEGER,                        -- Unix timestamp from <Created>
     spotnet_website  TEXT,                           -- URL from <Website>
+    spotnet_signature TEXT,                          -- Base64-encoded signature
+    spotnet_verified BOOLEAN DEFAULT FALSE,          -- Signature verification result
+    spotnet_spotter_id TEXT,                         -- Unique poster ID for SPOTSIGN_V2
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS releases_messageid ON releases(messageid);
