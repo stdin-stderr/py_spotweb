@@ -1,0 +1,22 @@
+[nntp]
+host     = ""
+port     = 563
+ssl      = true
+username = ""
+password = ""
+max_connections = 4
+batch_size      = 5000
+
+[database]
+dsn = "postgresql://indexer:secret@localhost:5432/usenet_index"
+
+[scanner]
+groups = ["free.pt"]
+spotnet_groups = ["free.pt"]
+max_age_days = 3
+
+[api]
+host     = "0.0.0.0"
+port     = 8080
+api_key  = ""
+base_url = "http://localhost:8080"
