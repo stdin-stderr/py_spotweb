@@ -73,91 +73,15 @@ def _bisect_cutoff(
         mid = (lo + hi) // 2
         batch = nntp.xover(mid, min(mid + 200, hi))
         if not batch:
-            # gap in article numbers — move lo forward
             lo = mid
             continue
         first_date = parse_date(batch[0].date)
         if not first_date or first_date < cutoff:
-            lo = mid   # old or unparseable date, search right
+            lo = mid
         else:
-            hi = mid   # recent enough, search left
+            hi = mid
     log.info("Bisect converged: lo=%d hi=%d — starting scan from lo", lo, hi)
-    return lo  # scan from lo; main loop filters articles before cutoff by date
-
-
-def scan_group(
-    nntp: NNTPClient,
-    conn: psycopg.Connection,
-    group_name: str,
-    max_age_days: int,
-    batch_size: int,
-) -> None:
-    group_id = ensure_group(conn, group_name)
-    conn.commit()
-
-    try:
-        info = nntp.group_info(group_name)
-    except Exception as exc:
-        log.warning("Could not select group %s: %s", group_name, exc)
-        return
-
-    log.info("Group %s: low=%d high=%d count=%d", group_name, info.low, info.high, info.count)
-
-    watermark = get_watermark(conn, group_id)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
-
-    if watermark == 0:
-        # First run: binary-search to the recent window rather than walking from article 1.
-        start = _bisect_cutoff(nntp, info.low, info.high, cutoff, batch_size)
-        log.info("Group %s: first run bisect found start=%d (high=%d)", group_name, start, info.high)
-    else:
-        start = watermark + 1
-
-    if start > info.high:
-        log.info("Group %s is up to date (watermark=%d)", group_name, watermark)
-        return
-
-    total_inserted = 0
-    for batch in nntp.xover_batched(start, info.high, batch_size=batch_size):
-        if not batch:
-            continue
-
-        rows = []
-        for art in batch:
-            posted_at = parse_date(art.date)
-            if posted_at and posted_at < cutoff:
-                continue
-            rows.append((
-                group_id,
-                art.article_num,
-                art.message_id or f"unknown-{art.article_num}@{group_name}",
-                art.subject,
-                art.poster,
-                posted_at,
-                art.bytes,
-                art.lines,
-                art.references,  # stored in `refs` column
-            ))
-
-        if rows:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO articles
-                      (group_id, article_num, message_id, subject, poster, posted_at, bytes, lines, refs)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (message_id) DO NOTHING
-                    """,
-                    rows,
-                )
-
-        last_num = batch[-1].article_num
-        set_watermark(conn, group_id, last_num)
-        conn.commit()
-        total_inserted += len(rows)
-        log.info("Group %s: inserted %d articles (up to article %d)", group_name, len(rows), last_num)
-
-    log.info("Group %s: scan complete — %d new articles total", group_name, total_inserted)
+    return lo
 
 
 def scan_spotnet_group(
@@ -256,11 +180,11 @@ def scan_spotnet_group(
             conn.execute(
                 """
                 INSERT INTO releases
-                  (title, search_title, category_id, newsgroup_id, poster, posted_at,
+                  (title, search_title, category_id, poster, posted_at,
                    total_bytes, file_count, completion_pct, search_vector,
                    source, nzb_raw, image_raw, description, spotnet_category, spotnet_subcats)
                 VALUES (
-                  %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, %s,
                   %s, 1, 100, to_tsvector('english', %s),
                   'spotnet', %s, %s, %s, %s, %s
                 )
@@ -270,7 +194,6 @@ def scan_spotnet_group(
                     post.title,
                     art.message_id,
                     post.category_id,
-                    group_id,
                     post.poster,
                     posted_at,
                     post.file_size,
@@ -310,30 +233,19 @@ def run_once(cfg) -> bool:
     )
     nntp.connect()
 
-    spotnet_groups = set(cfg.scanner.spotnet_groups)
     all_caught_up = True
 
     with psycopg.connect(cfg.database.dsn) as conn:
-        for group_name in cfg.scanner.groups:
+        for group_name in cfg.scanner.spotnet_groups:
             log.info("Scanning group: %s", group_name)
             try:
-                if group_name in spotnet_groups:
-                    caught_up = scan_spotnet_group(
-                        nntp=nntp,
-                        conn=conn,
-                        group_name=group_name,
-                        max_age_days=cfg.scanner.max_age_days,
-                        batch_size=cfg.nntp.batch_size,
-                    )
-                else:
-                    scan_group(
-                        nntp=nntp,
-                        conn=conn,
-                        group_name=group_name,
-                        max_age_days=cfg.scanner.max_age_days,
-                        batch_size=cfg.nntp.batch_size,
-                    )
-                    caught_up = True
+                caught_up = scan_spotnet_group(
+                    nntp=nntp,
+                    conn=conn,
+                    group_name=group_name,
+                    max_age_days=cfg.scanner.max_age_days,
+                    batch_size=cfg.nntp.batch_size,
+                )
                 if not caught_up:
                     all_caught_up = False
             except Exception as exc:
@@ -346,10 +258,10 @@ def run_once(cfg) -> bool:
 def main() -> None:
     cfg = load_config()
     log.info(
-        "Scanner starting — host=%s max_age_days=%d groups=%s",
+        "Scanner starting — host=%s max_age_days=%d spotnet_groups=%s",
         cfg.nntp.host,
         cfg.scanner.max_age_days,
-        cfg.scanner.groups,
+        cfg.scanner.spotnet_groups,
     )
     while True:
         try:

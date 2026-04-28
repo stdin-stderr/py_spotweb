@@ -1,4 +1,9 @@
--- Groups to scan
+-- Drop unused tables from legacy Usenet indexing (safe: no data, replaced by Spotnet-only design)
+DROP TABLE IF EXISTS file_articles CASCADE;
+DROP TABLE IF EXISTS files CASCADE;
+DROP TABLE IF EXISTS articles CASCADE;
+
+-- Groups being scanned (Spotnet-only)
 CREATE TABLE IF NOT EXISTS newsgroups (
     id             SERIAL PRIMARY KEY,
     name           TEXT NOT NULL UNIQUE,
@@ -9,47 +14,11 @@ CREATE TABLE IF NOT EXISTS newsgroups (
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Raw NNTP overview records — never modified after insert
-CREATE TABLE IF NOT EXISTS articles (
-    id          BIGSERIAL PRIMARY KEY,
-    group_id    INTEGER NOT NULL REFERENCES newsgroups(id),
-    article_num BIGINT NOT NULL,
-    message_id  TEXT NOT NULL UNIQUE,
-    subject     TEXT NOT NULL,
-    poster      TEXT,
-    posted_at   TIMESTAMPTZ,
-    bytes       BIGINT DEFAULT 0,
-    lines       INTEGER DEFAULT 0,
-    refs        TEXT,
-    processed   BOOLEAN DEFAULT FALSE,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS articles_group_processed ON articles(group_id, processed);
-CREATE INDEX IF NOT EXISTS articles_message_id ON articles(message_id);
-CREATE INDEX IF NOT EXISTS articles_posted_at ON articles(posted_at);
-
--- A file = one logical binary (e.g. movie.part01.rar) made of N article segments
-CREATE TABLE IF NOT EXISTS files (
-    id              BIGSERIAL PRIMARY KEY,
-    release_id      BIGINT,
-    normalized_name TEXT NOT NULL,
-    total_parts     INTEGER NOT NULL,
-    found_parts     INTEGER NOT NULL DEFAULT 0,
-    total_bytes     BIGINT DEFAULT 0,
-    is_rar          BOOLEAN DEFAULT FALSE,
-    is_par2         BOOLEAN DEFAULT FALSE,
-    is_nfo          BOOLEAN DEFAULT FALSE,
-    is_sfv          BOOLEAN DEFAULT FALSE,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS files_release_id ON files(release_id);
-
--- Many-to-many: articles belong to files
-CREATE TABLE IF NOT EXISTS file_articles (
-    file_id    BIGINT NOT NULL REFERENCES files(id),
-    article_id BIGINT NOT NULL REFERENCES articles(id),
-    part_num   INTEGER,
-    PRIMARY KEY (file_id, article_id)
+-- Operational: track scanner progress per group
+CREATE TABLE IF NOT EXISTS scan_state (
+    group_id     INTEGER PRIMARY KEY REFERENCES newsgroups(id),
+    last_article BIGINT DEFAULT 0,
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- A release = one logical item (album, movie, series episode, etc.)
@@ -58,7 +27,6 @@ CREATE TABLE IF NOT EXISTS releases (
     title          TEXT NOT NULL,
     search_title   TEXT NOT NULL,
     category_id    INTEGER NOT NULL,
-    newsgroup_id   INTEGER REFERENCES newsgroups(id),
     poster         TEXT,
     posted_at      TIMESTAMPTZ,
     total_bytes    BIGINT DEFAULT 0,
@@ -69,8 +37,8 @@ CREATE TABLE IF NOT EXISTS releases (
     is_passworded  BOOLEAN DEFAULT FALSE,
     nfo_text       TEXT,
     search_vector  TSVECTOR,
-    source         TEXT NOT NULL DEFAULT 'binary',  -- 'binary' or 'spotnet'
-    nzb_raw        BYTEA,                           -- pre-assembled NZB for Spotnet releases
+    source         TEXT NOT NULL DEFAULT 'spotnet', -- Spotnet-only design
+    nzb_raw        BYTEA,                           -- pre-assembled NZB from Spotnet XML
     image_raw      BYTEA,                           -- thumbnail image bytes (JPEG/PNG) from alt.binaries.ftd
     description    TEXT,                            -- release description from Spotnet XML
     created_at     TIMESTAMPTZ DEFAULT NOW()
@@ -87,12 +55,6 @@ CREATE TABLE IF NOT EXISTS categories (
     newznab_id INTEGER
 );
 
--- Operational: track scanner progress per group
-CREATE TABLE IF NOT EXISTS scan_state (
-    group_id     INTEGER PRIMARY KEY REFERENCES newsgroups(id),
-    last_article BIGINT DEFAULT 0,
-    updated_at   TIMESTAMPTZ DEFAULT NOW()
-);
 
 -- Seed categories (idempotent)
 -- Internal IDs match Spotnet scanner category_id values
@@ -118,6 +80,3 @@ ALTER TABLE releases ADD COLUMN IF NOT EXISTS image_raw         BYTEA;
 ALTER TABLE releases ADD COLUMN IF NOT EXISTS description       TEXT;
 ALTER TABLE releases ADD COLUMN IF NOT EXISTS spotnet_category  INTEGER;
 ALTER TABLE releases ADD COLUMN IF NOT EXISTS spotnet_subcats   TEXT;
-
--- Remove junk binary releases (Spotnet-only going forward)
-DELETE FROM releases WHERE source = 'binary';

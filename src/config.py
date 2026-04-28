@@ -26,7 +26,6 @@ class DatabaseConfig:
 
 @dataclass
 class ScannerConfig:
-    groups: list[str]
     spotnet_groups: list[str]
     max_age_days: int
 
@@ -67,7 +66,6 @@ def load(path: str | Path = "config.toml") -> Config:
 
     s = raw["scanner"]
     scanner = ScannerConfig(
-        groups=s["groups"],
         spotnet_groups=s.get("spotnet_groups", []),
         max_age_days=int(os.environ.get("MAX_AGE_DAYS", s["max_age_days"])),
     )
