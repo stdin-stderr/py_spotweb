@@ -43,6 +43,10 @@ class SpotnetPost:
     image_segments: list[str] = field(default_factory=list)
     spotnet_category: int | None = None  # Raw 0-3 from Spotnet XML
     spotnet_subcats: str = ""  # Raw subcat codes like "a0|b3|c1|d4"
+    spotnet_key: int | None = None  # Spotnet post ID from <Key>
+    spotnet_tag: str = ""  # User-defined tag from <Tag>
+    spotnet_created: int | None = None  # Unix timestamp from <Created>
+    spotnet_website: str = ""  # Optional URL from <Website>
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +113,26 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
     if not title:
         log.debug("Empty or missing Title element")
         return None
+
+    # Extract Spotnet-specific metadata
+    spotnet_key = None
+    try:
+        key_raw = txt("Key")
+        if key_raw:
+            spotnet_key = int(key_raw)
+    except (ValueError, AttributeError):
+        pass
+
+    spotnet_tag = txt("Tag")
+    spotnet_website = txt("Website")
+
+    spotnet_created = None
+    try:
+        created_raw = txt("Created")
+        if created_raw:
+            spotnet_created = int(created_raw)
+    except (ValueError, AttributeError):
+        pass
 
     poster    = txt("Poster")
     cat_raw   = txt("Category")      # "0"=Image/Video, "1"=Sound, "2"=Games, "3"=Applications
@@ -205,6 +229,10 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
         image_segments=image_segments,
         spotnet_category=spotnet_category,
         spotnet_subcats=subcat_string,
+        spotnet_key=spotnet_key,
+        spotnet_tag=spotnet_tag,
+        spotnet_created=spotnet_created,
+        spotnet_website=spotnet_website,
     )
 
 

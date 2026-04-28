@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS releases (
     spotnet_subcats  TEXT,
     nzb_segments     TEXT,
     image_segments   TEXT,
+    spotnet_key      INTEGER,                        -- Spotnet post ID from <Key>
+    spotnet_tag      TEXT,                           -- User-defined tag from <Tag>
+    spotnet_created  INTEGER,                        -- Unix timestamp from <Created>
+    spotnet_website  TEXT,                           -- URL from <Website>
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS releases_messageid ON releases(messageid);

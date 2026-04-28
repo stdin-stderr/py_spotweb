@@ -168,4 +168,15 @@ def search_response(releases: list[dict], base_url: str, total: int = 0) -> byte
         if cover_url:
             _newznab_attr(item, "coverurl", cover_url)
 
+        # Spotnet-specific metadata
+        if rel.get("spotnet_key"):
+            _newznab_attr(item, "key", str(rel["spotnet_key"]))
+        if rel.get("spotnet_tag"):
+            _newznab_attr(item, "tag", rel["spotnet_tag"])
+        if rel.get("spotnet_created"):
+            created_dt = datetime.fromtimestamp(rel["spotnet_created"], tz=timezone.utc)
+            _newznab_attr(item, "created", _format_date(created_dt))
+        if rel.get("spotnet_website"):
+            _newznab_attr(item, "website", rel["spotnet_website"])
+
     return b'<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(rss, encoding="unicode").encode()

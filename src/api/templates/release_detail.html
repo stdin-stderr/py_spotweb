@@ -37,6 +37,25 @@
 
         <div class="release-meta-label">Completion:</div>
         <div class="release-meta-value">{{ completion }}</div>
+
+        {% if spotnet_tag and spotnet_tag|length > 0 %}
+          <div class="release-meta-label">Tag:</div>
+          <div class="release-meta-value">{{ spotnet_tag }}</div>
+        {% endif %}
+
+        {% if spotnet_created %}
+          <div class="release-meta-label">Created (Spotnet):</div>
+          <div class="release-meta-value">
+            {{ spotnet_created.strftime('%Y-%m-%d %H:%M') }}
+          </div>
+        {% endif %}
+
+        {% if spotnet_website %}
+          <div class="release-meta-label">Website:</div>
+          <div class="release-meta-value">
+            <a href="{{ spotnet_website }}" target="_blank" rel="noopener noreferrer">{{ spotnet_website }}</a>
+          </div>
+        {% endif %}
       </div>
 
       {% if metadata %}

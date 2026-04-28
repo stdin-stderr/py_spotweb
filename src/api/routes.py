@@ -443,6 +443,10 @@ async def release_detail(identifier: str, request: Request):
 
     # Render template directly
     template = templates.get_template("release_detail.html")
+    # Convert spotnet_created timestamp to datetime if present
+    spotnet_created_dt = None
+    if row.get("spotnet_created"):
+        spotnet_created_dt = datetime.fromtimestamp(row["spotnet_created"], tz=timezone.utc)
     context = {
         "request": request,
         "release_id": canonical_id,
@@ -459,6 +463,10 @@ async def release_detail(identifier: str, request: Request):
         "nfo_raw": row.get("has_nfo"),
         "par2_raw": row.get("has_par2"),
         "password_protected": row.get("is_passworded"),
+        "spotnet_key": row.get("spotnet_key"),
+        "spotnet_tag": row.get("spotnet_tag"),
+        "spotnet_created": spotnet_created_dt,
+        "spotnet_website": row.get("spotnet_website"),
     }
     html_content = template.render(context)
     return HTMLResponse(html_content)
@@ -548,7 +556,7 @@ def _do_search(
             SELECT id, messageid, title, category_id, poster, posted_at, total_bytes, file_count,
                    completion_pct, description,
                    (image_raw IS NOT NULL OR image_segments IS NOT NULL) AS has_image,
-                   spotnet_category, spotnet_subcats
+                   spotnet_category, spotnet_subcats, spotnet_key, spotnet_tag, spotnet_created, spotnet_website
             FROM releases
             WHERE {where}
             ORDER BY posted_at DESC NULLS LAST

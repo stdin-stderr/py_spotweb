@@ -140,6 +140,9 @@ def scan_spotnet_group(
                 total_skipped += 1
                 continue
 
+            # Will be reassigned after parsing to prefer spotnet_created if available
+            posted_at_fallback = posted_at
+
             # Skip articles already stored
             if conn.execute(
                 "SELECT 1 FROM releases WHERE source='spotnet' AND search_title=%s",
@@ -160,6 +163,12 @@ def scan_spotnet_group(
                 log.info("Spotnet %s: parse failed for %s (subject: %s)", group_name, art.message_id, art.subject[:80])
                 total_failed += 1
                 continue
+
+            # Prefer spotnet_created timestamp over NNTP date if available
+            if post.spotnet_created:
+                posted_at = datetime.fromtimestamp(post.spotnet_created, tz=timezone.utc)
+            else:
+                posted_at = posted_at_fallback
 
             # Assemble NZB and image from segments listed in the XML
             nzb_bytes: bytes | None = None
@@ -190,11 +199,11 @@ def scan_spotnet_group(
                   (messageid, title, search_title, category_id, poster, posted_at,
                    total_bytes, file_count, completion_pct, search_vector,
                    source, nzb_raw, image_raw, description, spotnet_category, spotnet_subcats,
-                   nzb_segments, image_segments)
+                   nzb_segments, image_segments, spotnet_key, spotnet_tag, spotnet_created, spotnet_website)
                 VALUES (
                   %s, %s, %s, %s, %s, %s,
                   %s, 1, 100, to_tsvector('english', %s),
-                  'spotnet', %s, %s, %s, %s, %s, %s, %s
+                  'spotnet', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT DO NOTHING
                 """,
@@ -214,6 +223,10 @@ def scan_spotnet_group(
                     post.spotnet_subcats or None,
                     nzb_segments_str,
                     image_segments_str,
+                    post.spotnet_key,
+                    post.spotnet_tag or None,
+                    post.spotnet_created,
+                    post.spotnet_website or None,
                 ),
             )
             log.info("Spotnet %s: stored %r (%.1f MB, cat=%d)", group_name, post.title, post.file_size / 1024 / 1024, post.category_id)
