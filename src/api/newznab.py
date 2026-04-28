@@ -119,10 +119,11 @@ def search_response(releases: list[dict], base_url: str, total: int = 0) -> byte
 
     for rel in releases:
         item = SubElement(channel, "item")
-        rid = rel["id"]
+        # Use messageid as canonical identifier, fall back to integer id
+        rid = rel.get("messageid") or str(rel["id"])
         title = rel.get("title") or ""
         SubElement(item, "title").text = title
-        SubElement(item, "guid").text = str(rid)
+        SubElement(item, "guid").text = rid
         SubElement(item, "link").text = f"{base_url}/api?t=get&id={rid}"
         SubElement(item, "pubDate").text = _format_date(rel.get("posted_at"))
 

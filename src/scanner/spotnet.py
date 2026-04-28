@@ -78,22 +78,27 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
                 body = body[idx:]
                 break
         else:
+            log.debug("No X-XML header or XML marker found in article")
             return None
 
     try:
         root = ET.fromstring(body)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        log.debug("XML parse failed, trying <Posting> extraction: %s", exc)
         # Try extracting just the <Posting> block
         m = re.search(r"<Posting>.*?</Posting>", body, re.DOTALL | re.IGNORECASE)
         if not m:
+            log.debug("No <Posting> block found")
             return None
         try:
             root = ET.fromstring(f"<Spotnet>{m.group(0)}</Spotnet>")
-        except ET.ParseError:
+        except ET.ParseError as exc:
+            log.debug("Fallback XML parse also failed: %s", exc)
             return None
 
     posting = root.find(".//Posting") or root.find("Posting")
     if posting is None:
+        log.debug("No <Posting> element found in parsed XML")
         return None
 
     def txt(tag: str) -> str:
@@ -102,6 +107,7 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
 
     title = txt("Title")
     if not title:
+        log.debug("Empty or missing Title element")
         return None
 
     poster    = txt("Poster")

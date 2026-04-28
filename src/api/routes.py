@@ -310,6 +310,28 @@ def get_conn(request: Request) -> psycopg.Connection:
     return request.app.state.db_conn
 
 
+def _resolve_release(conn: psycopg.Connection, identifier: str) -> dict | None:
+    """Look up a release by messageid first, then fall back to integer id.
+
+    Returns a dict row or None.
+    """
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+        row = cur.execute(
+            "SELECT * FROM releases WHERE messageid = %s", (identifier,)
+        ).fetchone()
+        if row:
+            return row
+
+        # Fallback: try as integer id
+        try:
+            release_id = int(identifier)
+        except (ValueError, TypeError):
+            return None
+        return cur.execute(
+            "SELECT * FROM releases WHERE id = %s", (release_id,)
+        ).fetchone()
+
+
 @router.get("/api")
 async def api_endpoint(
     request: Request,
@@ -336,20 +358,16 @@ async def api_endpoint(
     if t == "get":
         if not id:
             raise HTTPException(400, "id parameter required")
-        try:
-            release_id = int(id)
-        except ValueError:
-            raise HTTPException(400, "id must be an integer")
 
         nntp_client = None
         if request.app.state.config.storage.retrieve_on_demand:
             nntp_client = get_nntp_client(request.app.state.config.nntp)
 
-        nzb = get_nzb(release_id, conn, nntp_client)
+        nzb = get_nzb(id, conn, nntp_client)
         if nzb is None:
             raise HTTPException(404, "NZB not available for this release")
-        title_row = conn.execute("SELECT title FROM releases WHERE id = %s", (release_id,)).fetchone()
-        raw_title = (title_row[0] if title_row else None) or f"release-{release_id}"
+        release_row = _resolve_release(conn, id)
+        raw_title = (release_row["title"] if release_row else None) or f"release-{id}"
         safe_title = "".join(c if c.isalnum() or c in " .-_()" else "_" for c in raw_title).strip()
         return Response(
             content=nzb,
@@ -364,16 +382,15 @@ async def api_endpoint(
     raise HTTPException(400, f"Unknown function: {t}")
 
 
-@router.get("/image/{release_id}")
-async def image_endpoint(release_id: int, request: Request) -> Response:
+@router.get("/image/{identifier:path}")
+async def image_endpoint(identifier: str, request: Request) -> Response:
     conn: psycopg.Connection = request.app.state.db_conn
-    row = conn.execute(
-        "SELECT image_raw, image_segments FROM releases WHERE id = %s", (release_id,)
-    ).fetchone()
-    if not row:
+    release = _resolve_release(conn, identifier)
+    if not release:
         raise HTTPException(404, "Release not found")
 
-    image_raw, image_segments_str = row
+    image_raw = release.get("image_raw")
+    image_segments_str = release.get("image_segments")
     data = bytes(image_raw) if image_raw else None
 
     if not data and image_segments_str and request.app.state.config.storage.retrieve_on_demand:
@@ -383,7 +400,7 @@ async def image_endpoint(release_id: int, request: Request) -> Response:
             nntp_client.connect()
             data = assemble_image(nntp_client._conn, segments)
         except Exception as exc:
-            log.warning("On-demand image retrieval failed for %d: %s", release_id, exc)
+            log.warning("On-demand image retrieval failed for %s: %s", identifier, exc)
 
     if not data:
         raise HTTPException(404, "No image available for this release")
@@ -392,25 +409,18 @@ async def image_endpoint(release_id: int, request: Request) -> Response:
     return Response(content=data, media_type=media_type)
 
 
-@router.get("/ui/release/{release_id}")
-async def release_detail(release_id: int, request: Request):
+@router.get("/ui/release/{identifier:path}")
+async def release_detail(identifier: str, request: Request):
     conn: psycopg.Connection = request.app.state.db_conn
     templates: Jinja2Templates = request.app.state.templates
 
-    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-        row = cur.execute(
-            """
-            SELECT id, title, poster, posted_at, total_bytes, file_count,
-                   completion_pct, description, has_nfo, has_par2, is_passworded,
-                   image_raw, image_segments, spotnet_category, spotnet_subcats, category_id
-            FROM releases
-            WHERE id = %s
-            """,
-            (release_id,),
-        ).fetchone()
+    row = _resolve_release(conn, identifier)
 
     if not row:
-        raise HTTPException(404, f"Release {release_id} not found")
+        raise HTTPException(404, f"Release {identifier} not found")
+
+    # Use messageid as the canonical identifier, fall back to id
+    canonical_id = row.get("messageid") or str(row["id"])
 
     # Decode metadata
     metadata = decode_spotnet_metadata(row["spotnet_category"], row["spotnet_subcats"])
@@ -435,7 +445,7 @@ async def release_detail(release_id: int, request: Request):
     template = templates.get_template("release_detail.html")
     context = {
         "request": request,
-        "release_id": release_id,
+        "release_id": canonical_id,
         "title": row.get("title") or "",
         "poster": row.get("poster") or "Unknown",
         "posted_at": row.get("posted_at"),
@@ -535,7 +545,7 @@ def _do_search(
     with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         rows = cur.execute(
             f"""
-            SELECT id, title, category_id, poster, posted_at, total_bytes, file_count,
+            SELECT id, messageid, title, category_id, poster, posted_at, total_bytes, file_count,
                    completion_pct, description,
                    (image_raw IS NOT NULL OR image_segments IS NOT NULL) AS has_image,
                    spotnet_category, spotnet_subcats
@@ -644,6 +654,9 @@ async def search_ui(
     dynamic_counts = _compute_dynamic_counts(conn, q, cat, active_subcats, 0)
     filter_tree = _build_filter_tree(dynamic_counts)
 
+    # Generate smart pagination
+    pagination_pages = get_smart_pagination(page, pages)
+
     # Render template directly to avoid Jinja2Templates caching issues
     template = templates.get_template("search_ui.html")
     context = {
@@ -653,6 +666,7 @@ async def search_ui(
         "total": total,
         "page": page,
         "pages": pages,
+        "pagination_pages": pagination_pages,
         "filter_tree": filter_tree,
         "active_subcats": active_subcats,
         "releases": releases,
@@ -680,3 +694,31 @@ def extract_genre_func(spotnet_cat: int, spotnet_subcats: str) -> str:
             # Look up genre description using cat2desc
             return cat2desc(hcat, code) or ""
     return ""
+
+
+def get_smart_pagination(current_page: int, total_pages: int, window: int = 2) -> list[int | None]:
+    """Generate smart pagination list with gaps indicated by None.
+
+    Shows first page, last page, current page ± window, with None values for gaps.
+    Example for 300 pages at page 6: [1, 2, None, 4, 5, 6, 7, 8, None, 299, 300]
+    """
+    if total_pages <= 10:
+        return list(range(1, total_pages + 1))
+
+    pages = set()
+    pages.add(1)
+    pages.add(total_pages)
+    pages.add(current_page)
+
+    # Add pages around current page (clamped to valid range)
+    for i in range(max(1, current_page - window), min(total_pages + 1, current_page + window + 1)):
+        pages.add(i)
+
+    sorted_pages = sorted(pages)
+    result = []
+    for i, page in enumerate(sorted_pages):
+        if i > 0 and sorted_pages[i - 1] < page - 1:
+            result.append(None)
+        result.append(page)
+
+    return result

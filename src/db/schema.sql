@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS scan_state (
 -- A release = one logical item (album, movie, series episode, etc.)
 CREATE TABLE IF NOT EXISTS releases (
     id             BIGSERIAL PRIMARY KEY,
+    messageid      TEXT UNIQUE,                     -- Usenet Message-ID for SpotWeb-compatible URLs
     title          TEXT NOT NULL,
     search_title   TEXT NOT NULL,
     category_id    INTEGER NOT NULL,
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS releases (
     image_segments   TEXT,
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS releases_messageid ON releases(messageid);
 CREATE INDEX IF NOT EXISTS releases_category ON releases(category_id);
 CREATE INDEX IF NOT EXISTS releases_posted_at ON releases(posted_at DESC);
 CREATE INDEX IF NOT EXISTS releases_search ON releases USING GIN(search_vector);

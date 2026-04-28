@@ -7,20 +7,44 @@ from src.scanner.spotnet import assemble_nzb
 from src.scanner.nntp import NNTPClient
 
 
-def get_nzb(release_id: int, conn: psycopg.Connection, nntp_client: NNTPClient | None = None) -> bytes | None:
+def _find_release_row(identifier: str, conn: psycopg.Connection):
+    """Look up a release by messageid first, then fall back to integer id.
+
+    Returns the (nzb_raw, nzb_segments, title) row or None.
+    """
+    # Try messageid first
+    row = conn.execute(
+        "SELECT nzb_raw, nzb_segments, title FROM releases WHERE messageid = %s",
+        (identifier,),
+    ).fetchone()
+    if row:
+        return row
+
+    # Fallback: try as integer id
+    try:
+        release_id = int(identifier)
+    except (ValueError, TypeError):
+        return None
+    return conn.execute(
+        "SELECT nzb_raw, nzb_segments, title FROM releases WHERE id = %s",
+        (release_id,),
+    ).fetchone()
+
+
+def get_nzb(identifier: str, conn: psycopg.Connection, nntp_client: NNTPClient | None = None) -> bytes | None:
     """Return the pre-assembled NZB for a release.
+
+    Args:
+        identifier: messageid string (e.g. "WW8easrf810leHwaQt0ee@spot.net") or integer id as string.
 
     Returns None if the release doesn't exist or has no NZB data.
     """
-    row = conn.execute(
-        "SELECT nzb_raw, nzb_segments FROM releases WHERE id = %s",
-        (release_id,),
-    ).fetchone()
+    row = _find_release_row(identifier, conn)
 
     if not row:
         return None
 
-    nzb_raw, nzb_segments_str = row
+    nzb_raw, nzb_segments_str, _title = row
 
     if nzb_raw:
         return bytes(nzb_raw)

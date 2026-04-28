@@ -181,21 +181,25 @@ def scan_spotnet_group(
                     except Exception as exc:
                         log.info("Spotnet %s: image assembly failed for %r: %s", group_name, post.title, exc)
 
+            # Strip angle brackets to get clean message-ID for SpotWeb-compatible URLs
+            clean_messageid = art.message_id.strip("<>")
+
             conn.execute(
                 """
                 INSERT INTO releases
-                  (title, search_title, category_id, poster, posted_at,
+                  (messageid, title, search_title, category_id, poster, posted_at,
                    total_bytes, file_count, completion_pct, search_vector,
                    source, nzb_raw, image_raw, description, spotnet_category, spotnet_subcats,
                    nzb_segments, image_segments)
                 VALUES (
-                  %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, %s, %s,
                   %s, 1, 100, to_tsvector('english', %s),
                   'spotnet', %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT DO NOTHING
                 """,
                 (
+                    clean_messageid,
                     post.title,
                     art.message_id,
                     post.category_id,
