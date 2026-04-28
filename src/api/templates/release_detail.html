@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Spotnet Index{% endblock %}
+
+{% block body %}
+<div class="search-container">
+  <a href="/ui/">← Back to search</a>
+
+  <div class="release-header">
+    {% if image_raw %}
+      <div class="release-image">
+        <img src="/image/{{ release_id }}" alt="Poster" />
+      </div>
+    {% endif %}
+    <div class="release-info">
+      <h1 class="release-title">{{ title }}</h1>
+      <div class="release-meta">
+        <div class="release-meta-label">Posted by:</div>
+        <div class="release-meta-value">{{ poster }}</div>
+
+        <div class="release-meta-label">Date:</div>
+        <div class="release-meta-value">
+          {% if posted_at %}
+            {{ posted_at.strftime('%Y-%m-%d %H:%M') }}
+          {% endif %}
+        </div>
+
+        <div class="release-meta-label">Size:</div>
+        <div class="release-meta-value">
+          {% if total_bytes %}
+            {{ "%.2f" | format(total_bytes / (1024*1024*1024)) }} GB
+          {% endif %}
+        </div>
+
+        <div class="release-meta-label">Files:</div>
+        <div class="release-meta-value">{{ file_count }}</div>
+
+        <div class="release-meta-label">Completion:</div>
+        <div class="release-meta-value">{{ completion }}</div>
+      </div>
+
+      {% if metadata %}
+        <div class="metadata-table">
+          {% for label, value in metadata.items() %}
+            <div style="display: flex;">
+              <div style="font-weight: 500; background: #f9f9f9; width: 120px; flex: 0 0 120px; padding: 0.7em; border-bottom: 1px solid #eee;">{{ label }}</div>
+              <div style="padding: 0.7em; flex: 1; border-bottom: 1px solid #eee;">{{ value }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div>
+        {% if nfo_raw %}
+          <span class="badge available">✓ NFO available</span>
+        {% endif %}
+        {% if par2_raw %}
+          <span class="badge available">✓ PAR2 available</span>
+        {% endif %}
+        {% if password_protected %}
+          <span class="badge unavailable">🔒 Password protected</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if description %}
+    <div>
+      <h2>Description</h2>
+      <div class="description">{{ description }}</div>
+    </div>
+  {% endif %}
+
+  <div class="actions">
+    <a href="/api?t=get&id={{ release_id }}">Download NZB</a>
+    <a href="/ui/">Back to search</a>
+  </div>
+</div>
+{% endblock %}

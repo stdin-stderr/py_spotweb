@@ -17,9 +17,11 @@ from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
 
+# Matches the raw SubCat XML format {digits}{letter}{digits}, e.g. "9a0" or "11b4"
+_SUBCAT_RE = re.compile(r'(\d+)([aAbBcCdDzZ])(\d+)', re.IGNORECASE)
+
 # Spotnet category code → internal category_id
 # 0=video, 1=audio, 2=image/ebook, 3=applications
-# Spotnet sub-category 'a5' means TV series; others are treated as movies.
 _CAT_VIDEO_MOVIE = 10   # Movies HD  (newznab 2040)
 _CAT_VIDEO_TV    = 20   # TV HD      (newznab 5040)
 _CAT_AUDIO       = 3    # Audio      (newznab 3000)
@@ -103,31 +105,55 @@ def parse_spotnet_body(lines: list[bytes]) -> SpotnetPost | None:
         return None
 
     poster    = txt("Poster")
-    cat_raw   = txt("Category")      # "0"=video, "1"=audio, "2"=image, "3"=applications
+    cat_raw   = txt("Category")      # "0"=Image/Video, "1"=Sound, "2"=Games, "3"=Applications
+                                     # Actual XML uses zero-padded e.g. "01" — always parse as int
     newsgroup = txt("Newsgroup") or "alt.binaries.ftd"
 
-    # Collect all SubCat codes for sub-category detection
-    subcat_codes: list[str] = []
-    for el in posting.iter("SubCat"):
-        if el.text and el.text.strip():
-            subcat_codes.append(el.text.strip().lower())
-    subcat_text = " ".join(subcat_codes)
-    subcat_string = "|".join(subcat_codes)  # Store raw subcat codes
-    is_tv = "a5" in subcat_codes or "series" in subcat_text
-
-    # Parse raw category as integer
+    # Parse category early (needed for subcat normalisation below).
+    # The XML uses 1-indexed, zero-padded values: "01"=Image/Video, "02"=Sound,
+    # "03"=Games, "04"=Applications.  Subtract 1 to get 0-indexed (0=Image, 1=Sound…)
+    # matching the CATEGORIES dict in categories.py.
     try:
-        spotnet_category = int(cat_raw) if cat_raw else None
+        spotnet_category = int(cat_raw) - 1 if cat_raw else None
     except ValueError:
         spotnet_category = None
 
-    if cat_raw == "0":
+    # Collect and normalize Sub codes.
+    # Wire format tag is <Sub> (not <SubCat> as the older PHP docs suggest).
+    # Each value is {digits}{letter}{digits}, e.g. "01a09" or "01b03".
+    # PHP parseFull() regex (\d+)([aAbBcCdDzZ])(\d+) normalises → letter+index: "a9", "b3".
+    subcat_codes: list[str] = []
+    for el in posting.iter("Sub"):          # real tag name is <Sub>
+        if el.text and el.text.strip():
+            m = _SUBCAT_RE.search(el.text.strip())
+            if m:
+                subcat_codes.append(m.group(2).lower() + str(int(m.group(3))))
+    # Fallback: some older posts may use <SubCat>
+    if not subcat_codes:
+        for el in posting.iter("SubCat"):
+            if el.text and el.text.strip():
+                m = _SUBCAT_RE.search(el.text.strip())
+                if m:
+                    subcat_codes.append(m.group(2).lower() + str(int(m.group(3))))
+
+    # Auto-generate z-category (type) when absent, matching PHP createSubcatZ behaviour
+    if spotnet_category == 0 and not any(c.startswith("z") for c in subcat_codes):
+        from src.scanner.categories import create_subcat_z
+        z_auto = create_subcat_z(0, "|".join(subcat_codes))
+        if z_auto:
+            subcat_codes.append(z_auto.rstrip("|"))
+
+    # Trailing pipe on every stored string so LIKE '%code|%' matches any position.
+    subcat_string = "|".join(subcat_codes) + "|" if subcat_codes else ""
+    is_tv = "z1" in subcat_codes  # z1 = Series type
+
+    if spotnet_category == 0:
         category_id = _CAT_VIDEO_TV if is_tv else _CAT_VIDEO_MOVIE
-    elif cat_raw == "1":
+    elif spotnet_category == 1:
         category_id = _CAT_AUDIO
-    elif cat_raw == "2":
+    elif spotnet_category == 2:
         category_id = _CAT_IMAGE
-    elif cat_raw == "3":
+    elif spotnet_category == 3:
         category_id = _CAT_PC
     else:
         category_id = _CAT_OTHER

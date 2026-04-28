@@ -284,6 +284,7 @@ def scan_spotnet_group(
             )
             log.info("Spotnet %s: stored %r (%.1f MB, cat=%d)", group_name, post.title, post.file_size / 1024 / 1024, post.category_id)
             total_stored += 1
+            conn.commit()  # commit each release immediately so the API sees it
 
         last_num = batch[-1].article_num
         set_watermark(conn, group_id, last_num)

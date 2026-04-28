@@ -130,9 +130,7 @@ Scanner updated (`src/scanner/spotnet.py`, `src/scanner/main.py`):
 
 ---
 
-## In Progress
-
-### 9. Category Decoding in Newznab Responses (WIP)
+### 9. Category Decoding in Newznab Responses
 
 - Added `spotnet_to_newznab_categories(spotnet_cat, subcats)` — maps Spotnet XML categories to Newznab IDs
   - Spotnet XML: 0=Video, 1=Audio, 2=Image/Ebook, 3=Applications → Newznab: 2000, 3000, 7000, 4000
@@ -144,19 +142,53 @@ Scanner updated (`src/scanner/spotnet.py`, `src/scanner/main.py`):
   - Output multiple `<newznab:attr name="category">` attributes
   - Fallback to internal category_id if spotnet_category is NULL
 
-**Blocker**: spotnet_category values appear incorrect or NULL:
-- XXX/adult videos store as spotnet_category=1 (Audio) instead of expected 0 (Video)
-- De Telegraaf (PDF) stores as spotnet_category=1 (Audio) instead of expected 2 (Image/Ebook)
-- Some records have spotnet_category=NULL
-- **Next**: Debug the XML parsing in `src/scanner/spotnet.py` to verify correct extraction of `<Category>` tag
+### 10. Release Detail Page (`/ui/release/{id}`)
+
+- Added `decode_spotnet_metadata(spotnet_category, spotnet_subcats)` helper — decodes pipe-separated subcategory codes (a0|b3|c1) into human-readable labels (Format, Source, Language, Genre, Type)
+- Added new route `/ui/release/{release_id}` with:
+  - Full release details: title, poster image, posted by, date, size, file count, completion
+  - Two-column metadata table showing Format, Source, Language, Genre, Type, Category (only populated if spotnet_subcats available)
+  - Full description text (no truncation)
+  - Additional info badges for password-protected, PAR2, NFO availability
+  - Download NZB button
+  - Back to search link
+  - Proper 404 handling for non-existent releases
+- Updated `/ui/` search results: title links now point to `/ui/release/{id}` instead of direct NZB download
+- Graceful handling of NULL/empty spotnet_category and spotnet_subcats (page still renders with available data)
+
+### 11. Spotweb-Style Hierarchical Filter Sidebar (`src/api/routes.py`, `src/api/main.py`)
+
+- Added `_compute_category_counts(conn)` — pre-computes (hcat, letter, number) → count mapping at startup from DB
+- Added `_build_filter_tree()` — constructs hierarchical filter tree grouped by head category → subcategory type → items
+- Added `is_filter_active()`, `_rebuild_params_with_filter()`, `_remove_filter()` template helper functions
+- Updated `_do_search()` to support multiple `subcat` parameters (radio-button style: replaces same letter, OR with different letters)
+- Redesigned `/ui/` page layout:
+  - **Left sidebar** (250px): Collapsible head categories (Image, Sound, Games, Applications) showing counts
+  - Each category expands to show subcategory types (Format, Source, Language, Genre, Type, Platform, etc.)
+  - Each item shows count and is clickable to filter
+  - Active filters marked blue with × clear button
+  - JavaScript `toggleFilterGroup()` for expand/collapse
+- **Features**:
+  - Radio-button filtering: selecting DivX auto-clears other Format filters (same letter)
+  - Multi-filter AND logic: `?subcat=a0&subcat=z0` returns releases with BOTH DivX format AND Movie type
+  - Static counts pre-computed at API startup (~87 unique category codes across 214 releases)
+  - Pagination preserves all active filters
+- Updated `src/api/main.py` lifespan to call `_compute_category_counts()` on startup
 
 ## Next Steps
 
-- Debug and fix spotnet_category parsing (may be NNTP source data issue or parser bug)
-- XXX detection: flag spots with `spotnet_category=0` + erotica subcategory codes (d23–d26, d72–d89)
-- UI: add subcategory display (Format, Source, Genre, etc.) to search results
+- Investigate count discrepancy for some filters (e.g., DivX shows 39 in sidebar but 48 exist in DB)
+  - May be related to releases with NULL/empty spotnet_subcats being excluded from count logic
+- Add keyboard shortcuts for common filters (e.g., Alt+D for DivX)
+- Consider: persisting expanded/collapsed state in localStorage
+- Consider: AJAX-based dynamic counts that update as user filters
+
+- Debug spotnet_category/subcats parsing (currently 0% of releases have populated subcats, 100% have category)
+  - May be NNTP source data issue or SubCat element extraction bug in `src/scanner/spotnet.py`
+- Once subcats are populated, detail page will auto-display Format, Source, Language, etc.
 - Consider: `/ui` pagination, filter/search by decoded category fields
 - Consider: on-demand NZB assembly for expired segment windows (nzb_raw = NULL)
+- XXX detection: flag spots with `spotnet_category=0` + erotica subcategory codes (d23–d26, d72–d89)
 
 ---
 
